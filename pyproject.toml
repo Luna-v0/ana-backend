@@ -1,0 +1,129 @@
+[project]
+name = "ana"
+version = "0.1.0"
+description = "Attorney Normative Assistent — Plataforma de assistência jurídica com IA local para advogados brasileiros"
+requires-python = ">=3.12"
+authors = [
+    { name = "ANA Team" }
+]
+keywords = ["lgpd", "direito", "ia", "rag", "advogado", "juridico"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Legal Industry",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+
+dependencies = [
+    # Scrapers de legislação (pacote separado — comentado até integração Docker)
+    # "leis-br",
+    # Backend
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "httpx>=0.28.0",
+    # LangChain / LangGraph (agentes)
+    "langchain>=0.3.0",
+    "langgraph>=0.2.0",
+    "langchain-ollama>=0.2.0",
+    "langchain-huggingface>=0.1.0",
+    # Vector DB — PostgreSQL + pgvector (backend padrão)
+    "psycopg[binary]>=3.2.0",
+    "pgvector>=0.3.6",
+    # Busca híbrida
+    "rank-bm25>=0.2.2",
+    # Embeddings / Reranker
+    "sentence-transformers>=3.3.0",
+    # Extração de documentos
+    "docling>=2.10.0",
+    "pymupdf>=1.25.0",
+    # Frontend
+    "gradio>=6.0.0",
+    # Utilitários
+    "loguru>=0.7.0",
+    "mkdocs>=1.6.1,<2.0",
+]
+
+[project.optional-dependencies]
+scrapers = [
+    # Scrapers de fontes jurídicas públicas (Spec 02 / Fase 2)
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "apscheduler>=3.10.0",
+]
+transcricao = [
+    # Transcrição de áudio (Spec 03 / Fase 3)
+    "whisperx>=3.1.0",
+    "pyannote.audio>=3.3.0",
+    "torch>=2.5.0",
+]
+documentos = [
+    # Geração de documentos Word (Spec 05 / Fase 4)
+    "python-docx>=1.1.0",
+    "mcp>=1.0.0",
+    # Extração de texto de PDFs para ingestão de sessões
+    "pdfminer.six>=20221105",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+]
+
+[project.scripts]
+ana-api = "ana.api.main:iniciar_servidor"
+ana-ui = "ana.frontend.app:iniciar_interface"
+ana-scraper = "ana.scrapers.pipeline:executar_cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ana"]
+
+[dependency-groups]
+qdrant = [
+    # Backend Qdrant (legado — substituído por PostgreSQL/pgvector)
+    "qdrant-client>=1.12.0",
+    "langchain-qdrant>=0.2.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.27.0",
+]
+scrapers = [
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "apscheduler>=3.10.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "."
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# [tool.uv.sources]
+# leis-br = { path = "../leis-br" }

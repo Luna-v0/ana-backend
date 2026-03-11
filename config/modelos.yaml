@@ -1,0 +1,80 @@
+# =============================================================================
+# ANA — Configuração de Modelos
+# =============================================================================
+# Altere apenas 'perfil_ativo' para trocar o conjunto de modelos em uso.
+# Perfis disponíveis: teste, producao
+#
+# Distribuição de VRAM estimada (RTX 4060 Ti 16GB):
+#   teste     : ~6 GB  (gemma3:4b para todos os agentes)
+#   producao  : ~14 GB (gemma-3-12b para tarefas complexas)
+#
+# Para aplicar: reinicie o backend após alterar este arquivo.
+# =============================================================================
+
+perfil_ativo: teste
+
+# Backend de armazenamento: 'postgres' (padrão) ou 'qdrant' (legado)
+storage_backend: postgres
+
+perfis:
+
+  # ---------------------------------------------------------------------------
+  # Perfil: teste
+  # Uso: Desenvolvimento — gemma3:4b para todos os agentes
+  # VRAM: ~4GB (LLM) + ~2GB (embeddings) + ~0.5GB (reranker) = ~6.5GB
+  # ---------------------------------------------------------------------------
+  teste:
+    descricao: "gemma3:4b para todos os agentes — leve e rápido para desenvolvimento"
+    vram_estimada_gb: 6.5
+
+    agentes:
+      orquestrador:      gemma3:4b
+      pesquisador:       gemma3:4b
+      analista:          gemma3:4b
+      redator:           gemma3:4b
+      validador:         gemma3:4b
+      transcritor:       gemma3:4b
+      monitor_prazos:    gemma3:4b
+      buscador_similares: gemma3:4b
+
+    embeddings:
+      modelo: intfloat/multilingual-e5-large
+      dispositivo: cuda
+      dimensao: 1024
+      batch_size: 32
+
+    reranker:
+      modelo: BAAI/bge-reranker-base
+      dispositivo: cuda
+
+  # ---------------------------------------------------------------------------
+  # Perfil: producao
+  # Uso: Produção — gemma-3-12b para tarefas jurídicas complexas
+  # VRAM: ~12GB (LLM 12b Q8) + ~2GB (embeddings) = ~14GB (Ollama descarrega entre chamadas)
+  # ---------------------------------------------------------------------------
+  producao:
+    descricao: "gemma-3-12b-it para síntese jurídica, gemma3:4b para tarefas simples"
+    vram_estimada_gb: 14.0
+
+    agentes:
+      # Tarefas complexas: síntese jurídica, redação de peças
+      pesquisador:  hf.co/unsloth/gemma-3-12b-it-GGUF:Q8_0
+      redator:      hf.co/unsloth/gemma-3-12b-it-GGUF:Q8_0
+      analista:     hf.co/unsloth/gemma-3-12b-it-GGUF:Q8_0
+      transcritor:  hf.co/unsloth/gemma-3-12b-it-GGUF:Q8_0
+
+      # Tarefas simples: classificação, extração, validação binária
+      orquestrador:      gemma3:4b
+      validador:         gemma3:4b
+      monitor_prazos:    gemma3:4b
+      buscador_similares: gemma3:4b
+
+    embeddings:
+      modelo: intfloat/multilingual-e5-large
+      dispositivo: cuda
+      dimensao: 1024
+      batch_size: 32
+
+    reranker:
+      modelo: BAAI/bge-reranker-base
+      dispositivo: cuda

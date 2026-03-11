@@ -1,0 +1,28 @@
+.venv
+
+**/*.pyc
+**/__pycache__
+**/*.pyo
+*.egg-info/
+dist/
+build/
+
+agentic-artifacts
+
+.env
+.python-version
+
+# Dados locais (LGPD: nunca versionar)
+data/
+*.db
+*.sqlite
+checkpoints.db
+
+# Modelos e artefatos pesados
+*.bin
+*.safetensors
+*.gguf
+
+# Logs
+logs/
+*.log
