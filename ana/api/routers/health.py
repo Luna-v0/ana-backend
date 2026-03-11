@@ -1,10 +1,11 @@
 """Router de health check para monitoramento dos serviços de infraestrutura.
 
-Verifica disponibilidade de Ollama e Qdrant via HTTP, retornando
+Verifica disponibilidade de Ollama e PostgreSQL, retornando
 status detalhado de cada serviço conforme descrito no spec 01 e spec 10.
 """
 
 import httpx
+import psycopg
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -51,7 +52,7 @@ class RespostaHealth(BaseModel):
     """Resposta completa do endpoint de health check.
 
     Attributes:
-        status: Status geral: 'ok', 'degradado' ou 'offline'.
+        status: Status geral: 'ok' ou 'degradado'.
         versao: Versão do sistema ANA.
         servicos: Lista de status de cada serviço de infraestrutura.
         modelos: Informações do perfil de modelos ativo.
@@ -101,47 +102,32 @@ async def _verificar_ollama(host: str) -> StatusServico:
     )
 
 
-async def _verificar_qdrant(host: str, porta: int) -> StatusServico:
-    """Verifica disponibilidade do Qdrant via endpoint /collections.
+async def _verificar_postgres(dsn: str) -> StatusServico:
+    """Verifica disponibilidade do PostgreSQL via conexão psycopg.
 
     Args:
-        host: Hostname do Qdrant.
-        porta: Porta REST do Qdrant.
+        dsn: DSN de conexão PostgreSQL (ex: 'postgresql://user:pass@host:5432/db').
 
     Returns:
         StatusServico com resultado da verificação.
     """
-    url_base = f"http://{host}:{porta}"
-    url = f"{url_base}/collections"
+    url_display = dsn.split("@")[-1] if "@" in dsn else dsn
     try:
-        async with httpx.AsyncClient(timeout=5.0) as cliente:
-            resposta = await cliente.get(url)
-            if resposta.status_code == 200:
-                dados = resposta.json()
-                colecoes = [
-                    c["name"]
-                    for c in dados.get("result", {}).get("collections", [])
-                ]
-                detalhes = f"Collections: {', '.join(colecoes) or 'nenhuma'}"
-                return StatusServico(
-                    nome="qdrant",
-                    disponivel=True,
-                    url=url_base,
-                    detalhes=detalhes,
-                )
+        async with await psycopg.AsyncConnection.connect(dsn) as conn:
+            await conn.execute("SELECT 1")
+        return StatusServico(
+            nome="postgres",
+            disponivel=True,
+            url=url_display,
+            detalhes="Conexão OK",
+        )
     except Exception as erro:
         return StatusServico(
-            nome="qdrant",
+            nome="postgres",
             disponivel=False,
-            url=url_base,
+            url=url_display,
             detalhes=str(erro),
         )
-    return StatusServico(
-        nome="qdrant",
-        disponivel=False,
-        url=url_base,
-        detalhes="Resposta inesperada do serviço",
-    )
 
 
 @router.get(
@@ -150,7 +136,7 @@ async def _verificar_qdrant(host: str, porta: int) -> StatusServico:
     summary="Health check completo",
     description=(
         "Verifica a disponibilidade de todos os serviços de infraestrutura "
-        "(Ollama, Qdrant). Retorna 'ok' quando todos estão disponíveis, "
+        "(Ollama, PostgreSQL). Retorna 'ok' quando todos estão disponíveis, "
         "'degradado' quando algum está offline."
     ),
 )
@@ -170,7 +156,7 @@ async def health_check() -> RespostaHealth:
 
     servicos = [
         await _verificar_ollama(config.ollama_host),
-        await _verificar_qdrant(config.qdrant_host, config.qdrant_port),
+        await _verificar_postgres(config.postgres_dsn),
     ]
 
     todos_disponiveis = all(s.disponivel for s in servicos)
