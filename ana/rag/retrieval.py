@@ -306,13 +306,13 @@ class PipelineRetrieval:
 
     def __init__(self) -> None:
         """Inicializa o pipeline de retrieval com seus componentes."""
-        from ana.rag.embeddings import GeradorEmbeddings
+        from ana.rag.embeddings import obter_gerador_embeddings
         from ana.storage import obter_vector_store
 
         self.indexador = obter_vector_store()
-        self.gerador_embeddings = GeradorEmbeddings()
+        self.gerador_embeddings = obter_gerador_embeddings()
         self.indice_bm25 = IndiceBM25()
-        self.reranker = Reranker()
+        self.reranker = obter_reranker()
 
     def inicializar_bm25(self, nome_colecao: str | None = None) -> None:
         """Carrega textos do PostgreSQL e constrói o índice BM25 em memória.
@@ -475,6 +475,16 @@ class PipelineRetrieval:
             f"Retrieval: {len(resultado)} resultados para '{query}'"
         )
         return resultado
+
+
+@lru_cache(maxsize=1)
+def obter_reranker() -> Reranker:
+    """Retorna instância singleton do Reranker (com cache).
+
+    Returns:
+        Instância única de Reranker para o ciclo de vida da app.
+    """
+    return Reranker()
 
 
 @lru_cache(maxsize=1)

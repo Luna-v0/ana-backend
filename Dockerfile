@@ -42,7 +42,7 @@ ENV UV_PROJECT_ENVIRONMENT="/app/.venv"
 FROM base AS deps
 
 COPY pyproject.toml uv.lock* ./
-# Instala dependências de produção (sem grupos opcionais pesados)
+# Instala dependências de produção
 RUN uv sync --frozen --no-install-project --no-dev
 
 

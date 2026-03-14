@@ -7,109 +7,23 @@ e busca vetorial intra-sessão, global e cross-sessão.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Literal
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, UploadFile, File
-from pydantic import BaseModel, Field
+
+from ana.api.schemas.sessoes import (
+    RequisicaoAtualizarSessao,
+    RequisicaoBuscaSessao,
+    RequisicaoCriarSessao,
+    RespostaBuscaSessao,
+    RespostaDocumento,
+    RespostaSessao,
+    ResultadoBuscaSessao,
+)
 
 router = APIRouter(prefix="/sessoes", tags=["Sessões"])
 
-# Extensões suportadas para upload de documentos
 _EXTENSOES_SUPORTADAS = {".pdf", ".docx", ".txt", ".md"}
-
-
-# =============================================================================
-# Modelos de request/response
-# =============================================================================
-
-class RequisicaoCriarSessao(BaseModel):
-    """Payload para criação de uma nova sessão."""
-
-    numero_processo: str = Field(description="Número CNJ do processo")
-    tipo_acao: str = Field(description="Tipo da ação judicial")
-    area: str = Field(default="civil", description="Área jurídica")
-    vara: str = Field(default="", description="Vara responsável")
-    cidade_uf: str = Field(default="", description="Cidade e UF do foro")
-    partes: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Partes do processo (autor, réu, etc.)",
-    )
-    prazos: list[dict[str, Any]] = Field(
-        default_factory=list,
-        description="Prazos processuais",
-    )
-
-
-class RequisicaoAtualizarSessao(BaseModel):
-    """Campos atualizáveis de uma sessão."""
-
-    numero_processo: str | None = None
-    tipo_acao: str | None = None
-    area: str | None = None
-    vara: str | None = None
-    cidade_uf: str | None = None
-    status: str | None = None
-    partes: dict[str, Any] | None = None
-    prazos: list[dict[str, Any]] | None = None
-
-
-class RespostaSessao(BaseModel):
-    """Representação de uma sessão na API."""
-
-    id: str
-    numero_processo: str
-    tipo_acao: str
-    area: str
-    vara: str
-    cidade_uf: str
-    status: str
-    criado_em: str
-    atualizado_em: str
-    partes: dict[str, Any]
-    prazos: list[dict[str, Any]]
-
-
-class RespostaDocumento(BaseModel):
-    """Representação de um documento indexado."""
-
-    id: str
-    sessao_id: str
-    nome: str
-    tipo: str
-    tamanho_bytes: int
-    chunks_indexados: int
-    criado_em: str
-
-
-class RequisicaoBuscaSessao(BaseModel):
-    """Payload para busca em uma sessão."""
-
-    query: str = Field(description="Texto da busca")
-    modo: Literal["intra", "global", "cross"] = Field(
-        default="intra",
-        description="Modo de busca: intra (só esta sessão), global (legislação + sessão), cross (outras sessões)",
-    )
-    top_k: int = Field(default=10, ge=1, le=50)
-
-
-class ResultadoBuscaSessao(BaseModel):
-    """Resultado de busca em sessão."""
-
-    id: str
-    score: float
-    texto: str
-    fonte: str
-    sessao_id: str | None = None
-    artigo: str | None = None
-
-
-class RespostaBuscaSessao(BaseModel):
-    """Resposta de busca em sessão."""
-
-    query: str
-    modo: str
-    total: int
-    resultados: list[ResultadoBuscaSessao]
 
 
 # =============================================================================
@@ -212,13 +126,11 @@ async def deletar_sessao(sessao_id: str) -> None:
     from ana.sessoes.repositorio import deletar_sessao as _deletar
     from ana.sessoes.ingestao import remover_todos_documentos_sessao
 
-    # Remove chunks do PostgreSQL
     try:
         remover_todos_documentos_sessao(sessao_id)
     except Exception:
-        pass  # PostgreSQL pode estar temporariamente indisponível
+        pass
 
-    # Remove metadata do SQLite
     removido = _deletar(sessao_id)
     if not removido:
         raise HTTPException(status_code=404, detail=f"Sessão '{sessao_id}' não encontrada")
@@ -230,7 +142,6 @@ async def upload_documento(
     arquivo: UploadFile = File(...),
 ) -> RespostaDocumento:
     """Faz upload e indexa um documento na sessão."""
-    from pathlib import Path
     from ana.sessoes.repositorio import obter_sessao, criar_documento, inicializar_banco
     from ana.sessoes.ingestao import ingerir_documento_sessao
 
@@ -322,7 +233,7 @@ async def buscar_em_sessao(
             brutos = buscar_intra_sessao(req.query, sessao_id, req.top_k)
         elif req.modo == "global":
             brutos = buscar_global(req.query, sessao_id, req.top_k)
-        else:  # cross
+        else:
             brutos = buscar_cross_sessao(req.query, sessao_id, req.top_k)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro na busca: {e}") from e

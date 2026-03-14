@@ -5,36 +5,10 @@ brasileiro usando o modelo redator configurado no perfil ativo.
 """
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+
+from ana.api.schemas.redacao import RequisicaoReformular, RespostaReformular
 
 router = APIRouter(prefix="/redacao", tags=["Redação"])
-
-
-class RequisicaoReformular(BaseModel):
-    """Requisição para reformulação de texto jurídico.
-
-    Attributes:
-        texto: Texto a ser reformulado.
-        instrucoes: Instruções adicionais opcionais para guiar a reescrita.
-    """
-
-    texto: str = Field(description="Texto a ser reformulado em linguagem jurídica formal")
-    instrucoes: str = Field(
-        default="",
-        description="Instruções adicionais para guiar a reescrita (opcional)",
-    )
-
-
-class RespostaReformular(BaseModel):
-    """Resposta com o texto reformulado.
-
-    Attributes:
-        texto_reformulado: Texto reescrito em linguagem jurídica formal.
-        modelo_usado: Nome do modelo LLM utilizado.
-    """
-
-    texto_reformulado: str
-    modelo_usado: str
 
 
 @router.post("/reformular", response_model=RespostaReformular)
@@ -50,7 +24,8 @@ async def reformular(requisicao: RequisicaoReformular) -> RespostaReformular:
         Texto reformulado e nome do modelo usado.
 
     Raises:
-        HTTPException: Se o texto estiver vazio ou o modelo falhar.
+        HTTPException 422: Se o texto estiver vazio.
+        HTTPException 503: Se o modelo falhar.
     """
     if not requisicao.texto.strip():
         raise HTTPException(status_code=422, detail="O campo 'texto' não pode estar vazio.")

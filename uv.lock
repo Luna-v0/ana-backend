@@ -160,6 +160,8 @@ name = "ana"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "apscheduler" },
+    { name = "beautifulsoup4" },
     { name = "docling" },
     { name = "fastapi", extra = ["standard"] },
     { name = "gradio" },
@@ -169,37 +171,24 @@ dependencies = [
     { name = "langchain-ollama" },
     { name = "langgraph" },
     { name = "loguru" },
+    { name = "lxml" },
     { name = "mkdocs" },
     { name = "pgvector" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pyannote-audio" },
     { name = "pymupdf" },
     { name = "rank-bm25" },
     { name = "sentence-transformers" },
+    { name = "torch" },
     { name = "uvicorn", extra = ["standard"] },
+    { name = "whisperx" },
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
 documentos = [
     { name = "mcp" },
     { name = "pdfminer-six" },
     { name = "python-docx" },
-]
-scrapers = [
-    { name = "apscheduler" },
-    { name = "beautifulsoup4" },
-    { name = "lxml" },
-]
-transcricao = [
-    { name = "pyannote-audio" },
-    { name = "torch" },
-    { name = "whisperx" },
 ]
 
 [package.dev-dependencies]
@@ -216,16 +205,11 @@ qdrant = [
     { name = "langchain-qdrant" },
     { name = "qdrant-client" },
 ]
-scrapers = [
-    { name = "apscheduler" },
-    { name = "beautifulsoup4" },
-    { name = "lxml" },
-]
 
 [package.metadata]
 requires-dist = [
-    { name = "apscheduler", marker = "extra == 'scrapers'", specifier = ">=3.10.0" },
-    { name = "beautifulsoup4", marker = "extra == 'scrapers'", specifier = ">=4.12.0" },
+    { name = "apscheduler", specifier = ">=3.10.0" },
+    { name = "beautifulsoup4", specifier = ">=4.12.0" },
     { name = "docling", specifier = ">=2.10.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.0" },
     { name = "gradio", specifier = ">=6.0.0" },
@@ -235,27 +219,22 @@ requires-dist = [
     { name = "langchain-ollama", specifier = ">=0.2.0" },
     { name = "langgraph", specifier = ">=0.2.0" },
     { name = "loguru", specifier = ">=0.7.0" },
-    { name = "lxml", marker = "extra == 'scrapers'", specifier = ">=5.0.0" },
+    { name = "lxml", specifier = ">=5.0.0" },
     { name = "mcp", marker = "extra == 'documentos'", specifier = ">=1.0.0" },
     { name = "mkdocs", specifier = ">=1.6.1,<2.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0" },
     { name = "pdfminer-six", marker = "extra == 'documentos'", specifier = ">=20221105" },
     { name = "pgvector", specifier = ">=0.3.6" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
-    { name = "pyannote-audio", marker = "extra == 'transcricao'", specifier = ">=3.3.0" },
+    { name = "pyannote-audio", specifier = ">=3.3.0" },
     { name = "pymupdf", specifier = ">=1.25.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "python-docx", marker = "extra == 'documentos'", specifier = ">=1.1.0" },
     { name = "rank-bm25", specifier = ">=0.2.2" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "sentence-transformers", specifier = ">=3.3.0" },
-    { name = "torch", marker = "extra == 'transcricao'", specifier = ">=2.5.0" },
+    { name = "torch", specifier = ">=2.5.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
-    { name = "whisperx", marker = "extra == 'transcricao'", specifier = ">=3.1.0" },
+    { name = "whisperx", specifier = ">=3.1.0" },
 ]
-provides-extras = ["scrapers", "transcricao", "documentos", "dev"]
+provides-extras = ["documentos"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -270,11 +249,6 @@ dev = [
 qdrant = [
     { name = "langchain-qdrant", specifier = ">=0.2.0" },
     { name = "qdrant-client", specifier = ">=1.12.0" },
-]
-scrapers = [
-    { name = "apscheduler", specifier = ">=3.10.0" },
-    { name = "beautifulsoup4", specifier = ">=4.12.0" },
-    { name = "lxml", specifier = ">=5.0.0" },
 ]
 
 [[package]]

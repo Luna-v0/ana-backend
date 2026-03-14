@@ -32,11 +32,8 @@ class AgendadorScrapers(_BASE_AGENDADOR):  # type: ignore[misc]
     """
 
     def iniciar(self) -> None:
-        try:
-            import apscheduler  # noqa: F401
-        except ImportError:
-            logger.warning("Agendador desativado: APScheduler não instalado. "
-                           "Execute: uv sync --group scrapers")
+        if _BASE_AGENDADOR is object:
+            logger.warning("Agendador desativado: leis-br não instalado.")
             return
 
         if self._pipeline is None:

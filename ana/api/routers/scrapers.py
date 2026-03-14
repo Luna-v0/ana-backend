@@ -7,16 +7,24 @@ Endpoints:
     GET  /scrapers/status        — Status do pipeline e dependências
     GET  /scrapers/fontes        — Lista fontes e última coleta de cada
     POST /scrapers/coletar       — Dispara coleta completa de uma fonte
-    POST /scrapers/atualizar     — Atualização incremental de uma fonte
+    POST /scrapers/atualizar-tudo — Atualização incremental de todas as fontes
 """
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from loguru import logger
-from pydantic import BaseModel
+
+from ana.api.schemas.scrapers import (
+    InfoFonte,
+    RequisicaoColeta,
+    RespostaAtualizarTudo,
+    RespostaColeta,
+    RespostaFontes,
+    StatusFonte,
+    StatusScrapers,
+)
 
 router = APIRouter(prefix="/scrapers", tags=["scrapers"])
 
-# Pipeline singleton (criado lazy na primeira requisição)
 _pipeline = None
 
 
@@ -29,62 +37,58 @@ def _obter_pipeline():
     return _pipeline
 
 
-class RequisicaoColeta(BaseModel):
-    """Payload para disparar coleta de uma fonte.
-
-    Attributes:
-        fonte: Nome da fonte a coletar ('planalto', 'lexml', 'stf', 'stj').
-    """
-    fonte: str
-
-
-class RespostaColeta(BaseModel):
-    """Resultado de uma operação de coleta.
-
-    Attributes:
-        fonte: Nome da fonte.
-        documentos_novos: Documentos indexados nesta execução.
-        documentos_ignorados: Documentos sem alteração (cache hit).
-        erros: Lista de erros ocorridos.
-        duracao_segundos: Tempo total de execução.
-    """
-    fonte: str
-    documentos_novos: int
-    documentos_ignorados: int
-    erros: list[str]
-    duracao_segundos: float
-
-
-@router.get("/status")
-async def status_scrapers() -> dict:
+@router.get(
+    "/status",
+    response_model=StatusScrapers,
+    summary="Status do pipeline de scrapers",
+)
+async def status_scrapers() -> StatusScrapers:
     """Retorna status do pipeline de scrapers e disponibilidade de dependências.
 
     Returns:
-        Dicionário com status de cada fonte e flag de dependências instaladas.
+        StatusScrapers com status de cada fonte e flag de dependências instaladas.
     """
     try:
         pipeline = _obter_pipeline()
-        return pipeline.status()
+        raw = pipeline.status()
+        fontes = {
+            nome: StatusFonte(
+                disponivel=info.get("disponivel", False),
+                ultima_coleta=info.get("ultima_coleta"),
+                documentos_indexados=info.get("documentos_indexados", 0),
+                erro=info.get("erro"),
+            )
+            for nome, info in raw.get("fontes", {}).items()
+        }
+        return StatusScrapers(
+            dependencias_instaladas=raw.get("dependencias_instaladas", True),
+            fontes=fontes,
+            total_documentos_cache=raw.get("total_documentos_cache", 0),
+        )
     except Exception as e:
         logger.error(f"Erro ao obter status dos scrapers: {e}")
-        return {
-            "fontes": {},
-            "total_documentos_cache": 0,
-            "dependencias_instaladas": False,
-            "erro": str(e),
-        }
+        return StatusScrapers(
+            dependencias_instaladas=False,
+            fontes={},
+            total_documentos_cache=0,
+            erro=str(e),
+        )
 
 
-@router.get("/fontes")
-async def listar_fontes() -> dict:
+@router.get(
+    "/fontes",
+    response_model=RespostaFontes,
+    summary="Lista fontes disponíveis",
+)
+async def listar_fontes() -> RespostaFontes:
     """Lista as fontes disponíveis e informações básicas de cada uma.
 
     Returns:
-        Dicionário com configuração e status de cada fonte.
+        RespostaFontes com configuração e status de cada fonte.
     """
     from ana.scrapers.agendador import INTERVALOS_HORAS
 
-    fontes = {
+    fontes_base: dict[str, dict] = {
         "planalto": {
             "descricao": "Legislação federal compilada (planalto.gov.br)",
             "tipo_documento": "lei_federal",
@@ -109,13 +113,17 @@ async def listar_fontes() -> dict:
 
     try:
         pipeline = _obter_pipeline()
-        status = pipeline.status()
-        for nome, info in fontes.items():
-            info.update(status["fontes"].get(nome, {}))
+        raw_status = pipeline.status().get("fontes", {})
+        for nome, info in fontes_base.items():
+            fonte_status = raw_status.get(nome, {})
+            info["ultima_coleta"] = fonte_status.get("ultima_coleta")
+            info["documentos_indexados"] = fonte_status.get("documentos_indexados", 0)
     except Exception:
         pass
 
-    return {"fontes": fontes}
+    return RespostaFontes(
+        fontes={nome: InfoFonte(**info) for nome, info in fontes_base.items()}
+    )
 
 
 def _executar_coleta_bg(fonte: str) -> None:
@@ -131,7 +139,11 @@ def _executar_coleta_bg(fonte: str) -> None:
         logger.error(f"Erro na coleta background de '{fonte}': {e}")
 
 
-@router.post("/coletar", response_model=RespostaColeta)
+@router.post(
+    "/coletar",
+    response_model=RespostaColeta,
+    summary="Disparar coleta de uma fonte",
+)
 async def coletar_fonte(
     req: RequisicaoColeta,
     background_tasks: BackgroundTasks,
@@ -170,21 +182,25 @@ async def coletar_fonte(
     )
 
 
-@router.post("/atualizar-tudo")
-async def atualizar_tudo(background_tasks: BackgroundTasks) -> dict:
+@router.post(
+    "/atualizar-tudo",
+    response_model=RespostaAtualizarTudo,
+    summary="Atualizar todas as fontes",
+)
+async def atualizar_tudo(background_tasks: BackgroundTasks) -> RespostaAtualizarTudo:
     """Dispara atualização incremental de todas as fontes em background.
 
     Coleta apenas documentos publicados após a última coleta de cada fonte.
 
     Returns:
-        Confirmação de início das atualizações.
+        Confirmação de início das atualizações com lista de fontes.
     """
     fontes = ["planalto", "lexml", "stf", "stj"]
     for fonte in fontes:
         background_tasks.add_task(_executar_coleta_bg, fonte)
 
     logger.info("Atualização incremental de todas as fontes agendada em background")
-    return {
-        "mensagem": "Atualização iniciada em background para todas as fontes",
-        "fontes": fontes,
-    }
+    return RespostaAtualizarTudo(
+        mensagem="Atualização iniciada em background para todas as fontes",
+        fontes=fontes,
+    )

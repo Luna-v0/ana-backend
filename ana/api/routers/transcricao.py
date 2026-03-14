@@ -1,7 +1,7 @@
 """Router FastAPI para o módulo de transcrição de audiências.
 
 Endpoints:
-    GET  /transcricao/status  — Verifica disponibilidade do módulo e dependências
+    GET  /transcricao/status      — Verifica disponibilidade do módulo e dependências
     POST /transcricao/transcrever — Transcreve um arquivo de áudio de audiência
 
 Nota sobre performance:
@@ -16,92 +16,25 @@ Nota (LGPD):
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from loguru import logger
-from pydantic import BaseModel
 
+from ana.api.schemas.transcricao import RespostaTranscricao, SegmentoResposta, StatusTranscricao
 from ana.config_modelos import obter_modelos
 
 router = APIRouter(prefix="/transcricao", tags=["Transcrição"])
 
 
-# ── Modelos de resposta ────────────────────────────────────────────────────────
-
-class StatusTranscricao(BaseModel):
-    """Status do módulo de transcrição.
-
-    Attributes:
-        disponivel: True se as dependências opcionais estão instaladas.
-        whisperx_instalado: True se whisperx está importável.
-        hf_token_configurado: True se HF_TOKEN está definido no ambiente.
-        dispositivo: Dispositivo que será usado ('cuda' ou 'cpu').
-        modelo_asr: Modelo Whisper configurado para uso.
-        mensagem: Instrução de instalação se módulo indisponível.
-    """
-
-    disponivel: bool
-    whisperx_instalado: bool
-    hf_token_configurado: bool
-    dispositivo: str
-    modelo_asr: str
-    mensagem: str = ""
-
-
-class SegmentoResposta(BaseModel):
-    """Segmento individual da transcrição para serialização JSON.
-
-    Attributes:
-        inicio: Timestamp de início em segundos.
-        fim: Timestamp de fim em segundos.
-        texto: Texto transcrito.
-        speaker_id: Label do diarizador (ex: SPEAKER_00).
-        timestamp_formatado: Início formatado como MM:SS ou HH:MM:SS.
-        participante_nome: Nome do participante identificado (se disponível).
-        participante_role: Role do participante (se identificado).
-    """
-
-    inicio: float
-    fim: float
-    texto: str
-    speaker_id: str
-    timestamp_formatado: str
-    participante_nome: Optional[str] = None
-    participante_role: Optional[str] = None
-
-
-class RespostaTranscricao(BaseModel):
-    """Resposta completa da transcrição de uma audiência.
-
-    Attributes:
-        segmentos: Lista de segmentos transcritos.
-        mapeamento_speakers: Dicionário SPEAKER_XX → nome do participante.
-        duracao_total: Duração total do áudio em segundos.
-        num_participantes: Número de speakers únicos identificados.
-        idioma: Idioma detectado.
-        modelo_asr: Modelo de transcrição usado.
-        modelo_diarizacao: Modelo de diarização usado.
-        markdown: Transcrição completa formatada como markdown.
-        arquivo_processado: Nome do arquivo de áudio processado.
-    """
-
-    segmentos: list[SegmentoResposta]
-    mapeamento_speakers: dict[str, str]
-    duracao_total: float
-    num_participantes: int
-    idioma: str
-    modelo_asr: str
-    modelo_diarizacao: str
-    markdown: str
-    arquivo_processado: str
-
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Helpers
+# =============================================================================
 
 def _verificar_whisperx_disponivel() -> bool:
     """Verifica se whisperx está instalado."""
@@ -121,7 +54,9 @@ def _obter_dispositivo() -> str:
         return "cpu"
 
 
-# ── Endpoints ──────────────────────────────────────────────────────────────────
+# =============================================================================
+# Endpoints
+# =============================================================================
 
 @router.get(
     "/status",
@@ -147,9 +82,7 @@ async def status_transcricao() -> StatusTranscricao:
     disponivel = whisperx_ok and hf_token_ok
 
     if not whisperx_ok:
-        mensagem = (
-            "whisperx não instalado. Execute: uv sync --group transcricao"
-        )
+        mensagem = "whisperx não instalado. Execute: uv sync --group transcricao"
     elif not hf_token_ok:
         mensagem = (
             "HF_TOKEN não configurado. Aceite os termos em "
@@ -226,34 +159,25 @@ async def transcrever_audiencia(
         HTTPException 500: Se ocorrer erro durante o processamento.
     """
     from ana.transcricao import (
-        DiarizadorSpeaker,
         MetadataAudiencia,
-        MotorASR,
         ResultadoTranscricao,
         formatar_transcript_markdown,
         identificar_participantes,
     )
     from ana.transcricao.modelos import ParticipanteAudiencia, RoleParticipante
 
-    # Verifica disponibilidade
     if not _verificar_whisperx_disponivel():
         raise HTTPException(
             status_code=503,
-            detail=(
-                "Módulo de transcrição não disponível. "
-                "Instale: uv sync --group transcricao"
-            ),
+            detail="Módulo de transcrição não disponível. Instale: uv sync --group transcricao",
         )
 
     if not os.environ.get("HF_TOKEN"):
         raise HTTPException(
             status_code=503,
-            detail=(
-                "HF_TOKEN não configurado. Configure: export HF_TOKEN=hf_seu_token"
-            ),
+            detail="HF_TOKEN não configurado. Configure: export HF_TOKEN=hf_seu_token",
         )
 
-    # Valida extensão do arquivo
     extensoes_suportadas = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mp4", ".webm"}
     nome_arquivo = audio.filename or "audio.mp3"
     sufixo = Path(nome_arquivo).suffix.lower()
@@ -270,7 +194,6 @@ async def transcrever_audiencia(
     perfil = config.ativo
     dispositivo = _obter_dispositivo()
 
-    # Salva arquivo em diretório temporário (limpo automaticamente)
     with tempfile.TemporaryDirectory() as tmpdir:
         caminho_audio = Path(tmpdir) / nome_arquivo
         try:
@@ -285,27 +208,24 @@ async def transcrever_audiencia(
         )
 
         try:
-            # Etapa 1: Transcrição ASR
-            motor_asr = MotorASR(
-                modelo_nome="large-v3",
-                dispositivo=dispositivo,
-                idioma="pt",
-                batch_size=16 if dispositivo == "cuda" else 4,
-                compute_type="float16" if dispositivo == "cuda" else "int8",
-            )
-            segmentos = motor_asr.transcrever(caminho_audio)
-            motor_asr.liberar_modelo()
+            from ana.gpu import obter_gestor
+            gestor = obter_gestor()
 
-            # Etapa 2: Diarização
-            diarizador = DiarizadorSpeaker(
-                dispositivo=dispositivo,
-                min_speakers=min_speakers,
-                max_speakers=max_speakers,
+            # Troca agêntica: libera embeddings + reranker, carrega Whisper
+            segmentos = await gestor.trocar_callback(
+                liberar=["embeddings", "reranker"],
+                carregar="whisper",
+                callback=lambda motor: motor.transcrever(caminho_audio),
             )
-            segmentos = diarizador.diarizar(caminho_audio, segmentos)
-            diarizador.liberar_pipeline()
 
-            # Etapa 3: Identificação de participantes
+            # Diarização logo após o ASR (Whisper já foi descarregado)
+            async with gestor.usar("diarizacao") as diarizador:
+                diarizador.min_speakers = min_speakers
+                diarizador.max_speakers = max_speakers
+                segmentos = await asyncio.to_thread(
+                    diarizador.diarizar, caminho_audio, segmentos
+                )
+
             _MAPA_CAMPOS_ROLES = [
                 ("juiz",           juiz,           RoleParticipante.JUIZ),
                 ("advogado_autor", advogado_autor, RoleParticipante.ADVOGADO_AUTOR),
@@ -346,10 +266,8 @@ async def transcrever_audiencia(
                 mapeamento = {}
                 segmentos = aplicar_mapeamento(segmentos, mapeamento)
 
-            # Calcula duração total
             duracao_total = max((s.fim for s in segmentos), default=0.0)
 
-            # Etapa 4: Formata resultado
             resultado = ResultadoTranscricao(
                 segmentos=segmentos,
                 metadata=metadata,
@@ -369,7 +287,6 @@ async def transcrever_audiencia(
                 detail=f"Erro durante processamento: {type(e).__name__}: {e}",
             ) from e
 
-    # Serializa para resposta
     segmentos_resposta = [
         SegmentoResposta(
             inicio=seg.inicio,

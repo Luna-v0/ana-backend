@@ -18,8 +18,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from ana.config import obter_configuracao
-from ana.api.routers import health, rag, transcricao, scrapers, redacao, sessoes
+from ana.api.routers import health, rag, transcricao, scrapers, redacao, sessoes, gpu
 from ana.scrapers.agendador import AgendadorScrapers
+from ana.gpu import obter_gestor
+from ana.gpu.registro import registrar_modelos
 
 # Instância global do agendador (iniciado no lifespan)
 _agendador = AgendadorScrapers()
@@ -45,6 +47,19 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info(f"Debug: {config.debug}")
     _agendador.iniciar()
 
+    # Registra modelos GPU no gestor (sem carregá-los ainda — lazy)
+    registrar_modelos(obter_gestor())
+
+    # Garante que a extensão pgvector e as tabelas necessárias existem
+    try:
+        from ana.storage.pgvector_store import IndexadorPgVector
+        indexador = IndexadorPgVector()
+        await asyncio.to_thread(indexador.criar_colecao_legislacao)
+        await asyncio.to_thread(indexador.criar_colecao_processos)
+        logger.info("Tabelas pgvector verificadas/criadas")
+    except Exception as e:
+        logger.warning(f"Falha ao criar tabelas pgvector no startup: {e}")
+
     # Inicializa índice BM25 a partir da tabela de legislação no PostgreSQL
     try:
         from ana.rag.retrieval import obter_pipeline_retrieval
@@ -56,6 +71,7 @@ async def ciclo_de_vida(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("API pronta para receber requisições")
     yield
     _agendador.parar()
+    await obter_gestor().descarregar_tudo()
     logger.info("Encerrando ANA — limpando recursos")
 
 
@@ -104,6 +120,7 @@ def criar_app() -> FastAPI:
     app.include_router(scrapers.router)
     app.include_router(redacao.router)
     app.include_router(sessoes.router)
+    app.include_router(gpu.router)
 
     # --- Endpoint raiz ---
     @app.get("/", include_in_schema=False)

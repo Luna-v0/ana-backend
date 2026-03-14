@@ -90,9 +90,12 @@ class ConfiguracaoANA:
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     cors_origins: list[str] = field(default_factory=lambda: [
-        "http://localhost:7860",   # Gradio (local e Docker com porta exposta)
-        "http://localhost:3000",   # React dev
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:7860",   # Frontend Docker (porta exposta padrão)
+        "http://localhost:3000",   # Alt dev
         "http://localhost:8080",   # Alt dev
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:7860",
     ])
 
     # --- Logging ---
