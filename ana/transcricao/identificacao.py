@@ -31,30 +31,41 @@ from .modelos import (
 )
 
 # Número de segmentos iniciais a analisar para identificação por contexto
-_SEGMENTOS_CONTEXTO = 20
+_SEGMENTOS_CONTEXTO = 30
 
-# Prompt para identificação de speakers via LLM
+# Prompt para identificação de speakers via LLM.
+# Prioriza auto-apresentações no texto e só usa metadados como confirmação.
 _PROMPT_IDENTIFICACAO = """\
 Analise o início desta transcrição de audiência judicial brasileira.
-Identifique cada SPEAKER com base no que dizem na transcrição.
+Seu objetivo é identificar cada SPEAKER_XX com o nome real do participante.
 
-Dicas de identificação:
-- O juiz(a) geralmente abre a audiência declarando-a aberta e conduz os trabalhos
-- Advogados costumam se identificar com nome e número da OAB
-- Testemunhas são chamadas pelo nome e prestam compromisso
-- O promotor representa o Ministério Público
-- Partes (autor/réu) respondem às perguntas do juiz
+Estratégias de identificação (use TODAS disponíveis):
 
-Participantes esperados pelo advogado:
+1. AUTO-APRESENTAÇÃO — procure frases como:
+   - "Meu nome é [Nome]"
+   - "Sou o/a Dr./Dra. [Nome]"
+   - "Aqui é o advogado [Nome], OAB/[Estado] [número]"
+   - "[Nome], advogado(a) d[a/o] [parte]"
+   - "Testemunha [Nome], qualificada nos autos"
+   - Qualquer frase em que o próprio falante revela seu nome ou função
+
+2. PADRÕES DE PAPEL:
+   - Quem abre a audiência e declara "aberta a audiência" → Juiz(a)
+   - Quem menciona número de OAB → Advogado(a)
+   - Quem presta compromisso de dizer a verdade → Testemunha
+   - Quem menciona "Ministério Público" → Promotor(a)
+
+3. CONFIRMAÇÃO POR METADADOS (use como referência adicional, pode estar vazio):
 {participantes_esperados}
 
 Transcrição (primeiros segmentos):
 {transcricao_inicial}
 
-Retorne APENAS um JSON com o mapeamento SPEAKER_XX → nome completo do participante.
-Exemplo: {{"SPEAKER_00": "Juiz Dr. Carlos Silva", "SPEAKER_01": "Adv. Dra. Maria Santos"}}
+Retorne APENAS um JSON com o mapeamento SPEAKER_XX → nome/identificação do participante.
+Inclua o papel quando identificado. Exemplos:
+{{"SPEAKER_00": "Juiz Dr. Carlos Silva", "SPEAKER_01": "Adv. Dra. Maria Santos (OAB/SP 123456)", "SPEAKER_02": "Testemunha João Costa"}}
 
-Se não conseguir identificar um speaker com segurança, omita-o do JSON.
+Se não conseguir identificar um speaker com segurança razoável, omita-o do JSON.
 Mapeamento:"""
 
 

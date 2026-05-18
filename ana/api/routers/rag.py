@@ -6,8 +6,9 @@ Expõe endpoints para:
 - Status do pipeline RAG
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ana.api.schemas.rag import (
     RequiscaoBusca,
@@ -289,3 +290,79 @@ async def resumir(requisicao: RequisicaoResumir) -> StreamingResponse:
             yield f"\n\n[Erro ao gerar resumo: {e}]"
 
     return StreamingResponse(gerar(), media_type="text/plain; charset=utf-8")
+
+
+class RespostaExtracaoTexto(BaseModel):
+    texto: str
+    nome: str
+    tamanho: int
+
+
+@router.post(
+    "/extrair-texto",
+    response_model=RespostaExtracaoTexto,
+    summary="Extrair texto de documento de processo (PDF ou texto)",
+    description=(
+        "Extrai texto de um arquivo enviado pelo usuário para uso como contexto "
+        "na descoberta de leis relacionadas. Suporta PDF e arquivos de texto."
+    ),
+)
+async def extrair_texto_documento(
+    arquivo: UploadFile = File(..., description="Arquivo PDF ou texto do processo"),
+) -> RespostaExtracaoTexto:
+    """Extrai texto de um documento de processo jurídico.
+
+    Args:
+        arquivo: Arquivo PDF ou texto (.txt, .md) enviado pelo usuário.
+
+    Returns:
+        Texto extraído, nome do arquivo e tamanho em caracteres.
+
+    Raises:
+        HTTPException 415: Formato de arquivo não suportado.
+        HTTPException 422: Falha na extração do texto.
+    """
+    import io
+    import tempfile
+    from pathlib import Path
+
+    nome = arquivo.filename or "documento"
+    conteudo = await arquivo.read()
+
+    ext = Path(nome).suffix.lower()
+
+    if ext == ".pdf":
+        try:
+            from pdfminer.high_level import extract_text as pdfminer_extract
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(conteudo)
+                tmp_path = tmp.name
+            try:
+                texto = pdfminer_extract(tmp_path) or ""
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+        except ImportError:
+            raise HTTPException(
+                status_code=503,
+                detail="pdfminer.six não instalado. Execute: uv add pdfminer-six",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Falha ao extrair PDF: {e}") from e
+
+    elif ext in (".txt", ".md", ".text"):
+        try:
+            texto = conteudo.decode("utf-8")
+        except UnicodeDecodeError:
+            texto = conteudo.decode("latin-1", errors="replace")
+
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail=f"Formato '{ext}' não suportado. Use PDF, TXT ou MD.",
+        )
+
+    texto = texto.strip()
+    if len(texto) < 50:
+        raise HTTPException(status_code=422, detail="Texto extraído muito curto — verifique o arquivo.")
+
+    return RespostaExtracaoTexto(texto=texto, nome=nome, tamanho=len(texto))

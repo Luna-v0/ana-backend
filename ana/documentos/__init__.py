@@ -1,9 +1,21 @@
-"""Módulo de geração de documentos Word do sistema ANA.
+"""Módulo de geração de documentos jurídicos do sistema ANA.
 
-Implementa criação e edição programática de peças processuais
-via python-docx e MCP Server Word, conforme descrito no spec 04.
+Gera peças processuais (petição inicial, contestação, recurso) como
+documentos Word (.docx) usando python-docx, com conteúdo produzido
+pelo LLM redator fundamentado em busca RAG de legislação e jurisprudência.
 
-Nota (Fase 3):
-    Este módulo será implementado na Fase 3 do roadmap.
-    Requer dependências opcionais do grupo 'documentos'.
+Uso::
+
+    from ana.documentos.gerador import gerar_documento
+    from ana.documentos.modelos import TipoPeca
+
+    docx_bytes, nome = gerar_documento(
+        sessao_id="sess_abc123",
+        tipo_peca=TipoPeca.PETICAO_INICIAL,
+    )
 """
+
+from ana.documentos.gerador import gerar_documento
+from ana.documentos.modelos import RequisicaoGerarDocumento, TipoPeca
+
+__all__ = ["gerar_documento", "RequisicaoGerarDocumento", "TipoPeca"]

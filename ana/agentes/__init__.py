@@ -1,11 +1,13 @@
-"""Módulo de agentes LangGraph do sistema ANA.
+"""Pacote de agentes LangGraph do sistema ANA (Spec 10).
 
-Implementa a orquestração de agentes especializados via LangGraph,
-conforme descrito no spec 09.
+Implementa o grafo de orquestração jurídica com nós especializados:
+- ``nos/classificar.py``: Orquestrador — classifica intenção do usuário
+- ``nos/pesquisar.py``: Pesquisador — busca RAG na legislação
+- ``nos/analisar.py``: Analista — análise de documentos do processo
+- ``nos/resposta.py``: Sintetizador — gera resposta final e valida leis
+- ``grafo.py``: StateGraph compilado com AsyncSqliteSaver
+- ``prompts.py``: Templates de prompt por agente
+- ``estado.py``: EstadoJuridico TypedDict compartilhado
 
-Submodules:
-    estado: TypedDict EstadoJuridico compartilhado entre agentes.
-    orquestrador: Grafo principal de orquestração LangGraph.
-    pesquisador: Agente Pesquisador Legal (RAG + síntese).
-    prompts: Templates de prompt para cada agente.
+Uso principal via ``POST /chat`` no router de chat.
 """

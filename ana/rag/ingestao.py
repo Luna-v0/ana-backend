@@ -2,10 +2,14 @@
 
 Implementa as Etapas 1 e 2 do spec 02:
 - Etapa 1: Extração de texto de PDFs e páginas web
-- Etapa 2: Chunking inteligente respeitando a hierarquia legal
+- Etapa 2: Chunking hierárquico respeitando a estrutura legal
 
-Hierarquia de chunking:
-    Lei → Título → Capítulo → Seção → Artigo (unidade base do chunk)
+Hierarquia de chunking (dois níveis):
+    Lei → Título → Capítulo → Seção → Artigo → [§ / Inciso / Alínea]
+
+O segundo nível (sub-chunking) é ativado automaticamente para artigos que
+ultrapassam o limite efetivo do modelo de embedding (≈450 tokens com margem).
+Artigos marcados com '(REVOGADO)' pelo scraper recebem vigencia=REVOGADA.
 
 Nota (LGPD):
     Documentos de processos são tratados localmente. Nunca enviados
@@ -78,10 +82,28 @@ _RE_QUEBRA_LINHA = re.compile(r"\n+")
 _RE_NUM_ARTIGO = re.compile(r"\d+")
 
 # Janela de lookback para extração de hierarquia.
-# Evita contaminação cruzada entre leis num mesmo PDF (ex: Vade Mecum).
 # 12000 chars ≈ ~10–20 artigos médios — suficiente para capturar cabeçalhos
 # de capítulos longos sem carregar texto de leis inteiras anteriores.
 _JANELA_HIERARQUIA = 12000
+
+# Marcador inserido pelo scraper Planalto para artigos revogados via <strike>.
+_MARCADOR_REVOGADO = "(REVOGADO)"
+
+# Regex case-insensitive para detectar QUALQUER forma de "(Revogado)" no texto.
+# Cobre: "(REVOGADO)", "(Revogado)", "(revogado)", "(REVOGADA)", etc.
+_RE_MARCADOR_REVOGADO = re.compile(r"\(revogad[ao]\)", re.IGNORECASE)
+
+# Limite de caracteres aproximado acima do qual ativa sub-chunking.
+# Calibrado com base no tokenizador XLM-RoBERTa do multilingual-e5-large:
+# ~4,5 chars/token × 430 tokens ≈ 1950 chars (margem de segurança de ~15%).
+_LIMITE_CHARS_SUB_CHUNK = 1950
+
+# Padrões de sub-artigo para divisão hierárquica de nível 2.
+# Operam sobre texto BRUTO (multiline) — antes de _limpar_corpo_artigo().
+# Cada padrão usa (?m) e lookahead para não consumir o delimitador.
+_RE_PARAGRAFO_SUB = re.compile(r"(?m)(?=^[ \t]*(?:§\s*\d+[º°\s]|Parágrafo único))")
+_RE_INCISO_SUB    = re.compile(r"(?m)(?=^[ \t]*[IVXLCDM]{1,6}[\s–—\-]+[A-ZÀ-Ú])")
+_RE_ALINEA_SUB    = re.compile(r"(?m)(?=^[ \t]*[a-z]\s*\))")
 
 
 # =============================================================================
@@ -168,25 +190,50 @@ def _normalizar_artigo_id(marcador: str) -> str:
 # Chunking jurídico
 # =============================================================================
 
+def _sub_chunkar_artigo(texto_bruto: str, artigo_id: str) -> list[tuple[str, str]]:
+    """Divide artigo bruto (multiline) em sub-chunks por parágrafo → inciso → alínea.
+
+    Opera sobre o texto RAW antes de _limpar_corpo_artigo() para que os
+    delimitadores (§, I —, a)) ainda estejam em início de linha.
+
+    Retorna lista de (texto_bruto_da_parte, artigo_id_com_sufixo).
+    Usa o padrão mais grosso disponível: § > inciso > alínea.
+    """
+    for padrao in (_RE_PARAGRAFO_SUB, _RE_INCISO_SUB, _RE_ALINEA_SUB):
+        partes = [p.strip() for p in padrao.split(texto_bruto) if p.strip()]
+        if len(partes) >= 2:
+            # Agrupa partes muito curtas (< 60 chars) com a anterior
+            agrupadas: list[str] = []
+            for parte in partes:
+                if agrupadas and len(parte) < 60:
+                    agrupadas[-1] = agrupadas[-1] + "\n" + parte
+                else:
+                    agrupadas.append(parte)
+            total = len(agrupadas)
+            return [(p, f"{artigo_id} [{idx + 1}/{total}]") for idx, p in enumerate(agrupadas)]
+
+    return [(texto_bruto, artigo_id)]
+
+
 def chunkar_texto_juridico(
     texto: str,
     metadata_base: MetadataChunkJuridico,
 ) -> list[ChunkJuridico]:
-    """Divide texto de lei em chunks por artigo com metadata jurídica.
+    """Divide texto de lei em chunks hierárquicos com metadata jurídica.
 
-    Cada artigo de lei torna-se um chunk independente. Artigos longos
-    com múltiplos parágrafos e incisos ficam inteiros no chunk (geralmente
-    cabem em 512 tokens). Marcadores estruturais (TÍTULO, CAPÍTULO, Seção)
-    são extraídos para a metadata, não para o texto de busca.
+    Nível 1: um chunk por artigo.
+    Nível 2: se o artigo ultrapassar _LIMITE_CHARS_SUB_CHUNK, divide por
+             parágrafo (§) → inciso (I —) → alínea (a)) automaticamente.
+
+    Artigos marcados com '(REVOGADO)' pelo scraper recebem vigencia=REVOGADA
+    independentemente do status geral do documento.
 
     Args:
         texto: Texto completo da lei para chunking.
-        metadata_base: Metadata base com informações da fonte (lei, tipo,
-            área, vigência, etc.). Cada chunk herda estes valores e adiciona
-            a hierarquia específica do artigo.
+        metadata_base: Metadata base herdada por todos os chunks.
 
     Returns:
-        Lista de ChunkJuridico, um por artigo principal encontrado.
+        Lista de ChunkJuridico ordenada pela posição no texto original.
     """
     chunks: list[ChunkJuridico] = []
     posicoes = [(m.start(), m.group(0)) for m in _RE_ARTIGO.finditer(texto)]
@@ -198,35 +245,57 @@ def chunkar_texto_juridico(
         )
         return chunks
 
+    n_revogados = 0
+    n_sub_chunks = 0
+
     for i, (inicio, marcador) in enumerate(posicoes):
         fim = posicoes[i + 1][0] if i + 1 < len(posicoes) else len(texto)
         texto_bruto = texto[inicio:fim].strip()
-        texto_limpo = _limpar_corpo_artigo(texto_bruto)
-
         bloco_anterior = texto[:inicio]
         titulo, capitulo, secao = _extrair_hierarquia(bloco_anterior)
         artigo_id = _normalizar_artigo_id(marcador)
 
-        # Chunk herda metadata_base e adiciona hierarquia específica
-        metadata_chunk = MetadataChunkJuridico(
-            fonte=metadata_base.fonte,
-            tipo=metadata_base.tipo,
-            area=metadata_base.area,
-            vigencia=metadata_base.vigencia,
-            orgao=metadata_base.orgao,
-            url_origem=metadata_base.url_origem,
-            data_publicacao=metadata_base.data_publicacao,
-            sessao_id=metadata_base.sessao_id,
-            titulo=titulo,
-            capitulo=capitulo,
-            secao=secao,
-            artigo=artigo_id,
-        )
+        # Detecta artigo revogado.
+        # Cobre tanto o marcador inserido pelo scraper ("(REVOGADO)") quanto
+        # a forma nativa dos textos jurídicos ("(Revogado)", "(revogado)", etc.).
+        vigencia_artigo = metadata_base.vigencia
+        if _RE_MARCADOR_REVOGADO.search(texto_bruto):
+            vigencia_artigo = VigenciaStatus.REVOGADA
+            texto_bruto = _RE_MARCADOR_REVOGADO.sub("", texto_bruto).strip()
+            n_revogados += 1
 
-        chunks.append(ChunkJuridico(texto=texto_limpo, metadata=metadata_chunk))
+        # Sub-chunking opera no texto BRUTO (multiline) para que os
+        # delimitadores (§, I —, a)) ainda estejam no início de linha.
+        partes_brutas: list[tuple[str, str]]
+        if len(texto_bruto) > _LIMITE_CHARS_SUB_CHUNK:
+            partes_brutas = _sub_chunkar_artigo(texto_bruto, artigo_id)
+            if len(partes_brutas) > 1:
+                n_sub_chunks += len(partes_brutas) - 1
+        else:
+            partes_brutas = [(texto_bruto, artigo_id)]
+
+        for texto_parte_bruto, artigo_parte_id in partes_brutas:
+            texto_parte = _limpar_corpo_artigo(texto_parte_bruto)
+            metadata_chunk = MetadataChunkJuridico(
+                fonte=metadata_base.fonte,
+                tipo=metadata_base.tipo,
+                area=metadata_base.area,
+                vigencia=vigencia_artigo,
+                orgao=metadata_base.orgao,
+                url_origem=metadata_base.url_origem,
+                data_publicacao=metadata_base.data_publicacao,
+                sessao_id=metadata_base.sessao_id,
+                titulo=titulo,
+                capitulo=capitulo,
+                secao=secao,
+                artigo=artigo_parte_id,
+            )
+            chunks.append(ChunkJuridico(texto=texto_parte, metadata=metadata_chunk))
 
     logger.info(
-        f"Chunking concluído: {len(chunks)} artigos extraídos de '{metadata_base.fonte}'"
+        f"Chunking concluído: {len(chunks)} chunks de '{metadata_base.fonte}'"
+        + (f" ({n_revogados} revogados)" if n_revogados else "")
+        + (f" (+{n_sub_chunks} sub-chunks)" if n_sub_chunks else "")
     )
     return chunks
 

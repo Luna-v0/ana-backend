@@ -18,7 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from ana.config import obter_configuracao
-from ana.api.routers import health, rag, transcricao, scrapers, redacao, sessoes, gpu
+from ana.api.routers import health, rag, transcricao, scrapers, redacao, sessoes, gpu, chat, documentos
 from ana.scrapers.agendador import AgendadorScrapers
 from ana.gpu import obter_gestor
 from ana.gpu.registro import registrar_modelos
@@ -115,10 +115,12 @@ def criar_app() -> FastAPI:
 
     # --- Routers ---
     app.include_router(health.router)
+    app.include_router(chat.router)
     app.include_router(rag.router)
     app.include_router(transcricao.router)
     app.include_router(scrapers.router)
     app.include_router(redacao.router)
+    app.include_router(documentos.router)
     app.include_router(sessoes.router)
     app.include_router(gpu.router)
 

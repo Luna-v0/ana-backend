@@ -4,6 +4,7 @@ Cada módulo define os schemas Pydantic (request + response) de um router.
 Os routers importam daqui e não definem modelos inline.
 
 Módulos:
+    chat        → /chat
     health      → /health
     rag         → /rag
     redacao     → /redacao
@@ -12,6 +13,7 @@ Módulos:
     transcricao → /transcricao
 """
 
+from ana.api.schemas.chat import EventoSSE, RequisicaoChat, RespostaChat
 from ana.api.schemas.health import InfoModelos, RespostaHealth, StatusServico
 from ana.api.schemas.rag import (
     RequiscaoBusca,
@@ -48,6 +50,10 @@ from ana.api.schemas.transcricao import (
 )
 
 __all__ = [
+    # chat
+    "RequisicaoChat",
+    "RespostaChat",
+    "EventoSSE",
     # health
     "StatusServico",
     "InfoModelos",
