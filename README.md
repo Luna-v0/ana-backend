@@ -1,22 +1,47 @@
-# Attorney Normative Assistent (ANA)
+# ana-backend
 
-**Application for attorneys to assist with legal tasks**
+Backend do **ANA — Attorney Normative Assistent**, plataforma de assistência jurídica para advogados brasileiros, executada majoritariamente em ambiente local para preservar a confidencialidade dos dados de clientes.
 
-Version 1.0 — February 2026
+> Para a arquitetura completa do ecossistema, ver [`ana-arch`](https://github.com/Luna-v0/ana-arch).
 
-This projects is produced in portuguese since it is intended for brazilian attorneys.
+## Capacidades
 
-## Executive Summary
+- **RAG híbrido** (semântico + sintático) sobre legislação brasileira
+- **Transcrição** de audiências com identificação de participantes (WhisperX)
+- **Geração e edição** de documentos Word com formatação jurídica
+- **Sessões isoladas** por caso, com RAG dedicado
+- **Validação automática** de citações legais para mitigar alucinações
+- **Orquestração de agentes** modular via LangGraph
 
-This system is a complete legal assistance platform that runs **mostly locally**, ensuring the privacy of case data. It combines:
+## Stack
 
-- **Hybrid RAG** (semantic + syntactic) over all Brazilian legislation
-- **Intelligent transcription** of hearings with participant identification
-- **Generation and editing** of Word documents with legal formatting
-- **Isolated sessions** per case with dedicated RAG
-- **Automatic validation** of cited laws to minimize hallucinations
-- **Agent architecture** modular orchestrated via LangGraph
+| Camada | Tecnologia |
+|--------|------------|
+| API | FastAPI |
+| LLM | Ollama |
+| Vector DB | Qdrant |
+| Transcrição | WhisperX |
+| Orquestração | LangGraph |
+| Checkpointing | SQLite (`AsyncSqliteSaver`) |
+| Gerenciador | uv |
 
-The main stack is: **Ollama** (LLM), **Qdrant** (vector DB), **WhisperX** (transcription), **LangGraph** (agents), **FastAPI** (backend).
+## Layout
 
-For the documentation, see the [docs](docs/) folder. It is in portuguese.
+```
+ana/        # código da aplicação (rotas, agentes, RAG, sessões)
+config/     # configuração de modelos e prompts
+data/       # bases locais (sqlite, índices)
+scripts/    # utilitários (indexação, manutenção)
+tests/      # testes de integração (LangGraph end-to-end)
+notebooks/  # exploração e protótipos
+```
+
+## Desenvolvimento
+
+```bash
+uv sync                              # instala dependências
+uv run uvicorn ana.main:app --reload # API em http://localhost:8000
+uv run pytest                        # testes
+```
+
+A documentação detalhada está em `docs/` (português).
